@@ -1,0 +1,18 @@
+{
+  "name": "Johnny的树洞",
+  "short_name": "树洞",
+  "description": "一键录音，安全存储在本地，有网时还能转文字",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F0EDE4",
+  "theme_color": "#3D2C5E",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' style='stop-color:%23F2A900'/><stop offset='100%25' style='stop-color:%23E8850C'/></linearGradient></defs><rect width='512' height='512' rx='100' fill='url(%23g)'/><circle cx='256' cy='220' r='80' fill='none' stroke='white' stroke-width='14'/><rect x='210' y='260' width='92' height='12' rx='6' fill='white' opacity='0.5'/><rect x='226' y='282' width='60' height='12' rx='6' fill='white' opacity='0.3'/><rect x='216' y='310' width='80' height='60' rx='14' fill='white'/><circle cx='256' cy='332' r='16' fill='%233D2C5E'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#3D2C5E">
+<meta name="description" content="Johnny的树洞 — 一键录音，安全本地存储，边录边转文字">
+<title>Johnny的树洞</title>
+<link rel="manifest" href="/manifest.json">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --gold:#F2A900;--gold2:#E8850C;--purple:#3D2C5E;--purple2:#2B1B54;
+  --bg:#F0EDE4;--bg2:#E8E3D8;--card:#FFFFFF;--text:#3D2C5E;
+  --text2:#7A6F8E;--red:#FF4D4D;--red2:#E63946;--green:#4CAF50;
+  --radius:20px;--radius-sm:14px;--shadow:0 4px 0 rgba(61,44,94,0.12);
+  --font:'SF Pro Rounded','PingFang SC',system-ui,sans-serif;
+  --transition:0.25s cubic-bezier(0.4,0,0.2,1)
+}
+body{
+  font-family:var(--font);background:var(--bg);color:var(--text);
+  min-height:100dvh;min-height:-webkit-fill-available;
+  -webkit-tap-highlight-color:transparent;user-select:none;
+  -webkit-user-select:none;overflow-x:hidden;
+  padding-bottom:env(safe-area-inset-bottom,20px)
+}
+/* Header */
+.header{
+  position:sticky;top:0;z-index:100;
+  background:var(--purple);color:#FFF;
+  padding:14px 20px;padding-top:max(14px,env(safe-area-inset-top));
+  display:flex;align-items:center;gap:12px;
+  box-shadow:0 4px 20px rgba(61,44,94,0.3)
+}
+.header-icon{font-size:28px}
+.header h1{font-size:22px;font-weight:800;letter-spacing:-0.5px}
+.header-sub{font-size:13px;opacity:0.7;margin-top:2px;font-weight:500}
+/* Info bar */
+.info-bar{
+  background:var(--card);margin:12px 20px 0;padding:10px 16px;
+  border-radius:var(--radius-sm);font-size:12px;color:var(--text2);
+  display:flex;align-items:center;gap:8px;max-width:520px;
+  margin-left:auto;margin-right:auto;font-weight:500
+}
+.info-bar .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.info-bar .dot.on{background:var(--green)}
+.info-bar .dot.off{background:#CCC}
+/* Main */
+.main{padding:12px 20px 40px;max-width:520px;margin:0 auto}
+/* Recording Area */
+.record-zone{
+  background:var(--card);border-radius:var(--radius);
+  padding:32px 20px 28px;text-align:center;
+  box-shadow:var(--shadow),0 8px 32px rgba(61,44,94,0.08);
+  margin-bottom:24px;position:relative;overflow:hidden
+}
+.record-zone::before{
+  content:'';position:absolute;top:-40px;right:-40px;
+  width:120px;height:120px;background:var(--gold);
+  border-radius:50%;opacity:0.06
+}
+.record-timer{
+  font-size:56px;font-weight:900;letter-spacing:-2px;
+  color:var(--purple);margin-bottom:6px;
+  font-variant-numeric:tabular-nums;height:72px;line-height:72px
+}
+.record-timer.recording{color:var(--red);animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+.record-status{
+  font-size:14px;color:var(--text2);font-weight:600;
+  margin-bottom:4px;height:20px
+}
+.record-status.recording{color:var(--red)}
+/* Live transcript during recording */
+.live-transcript-box{
+  min-height:44px;max-height:120px;overflow-y:auto;
+  margin:0 4px 16px;padding:10px 14px;
+  background:var(--bg);border-radius:12px;
+  font-size:14px;color:var(--text);line-height:1.6;
+  text-align:left;word-break:break-all;
+  -webkit-overflow-scrolling:touch
+}
+.live-transcript-box::-webkit-scrollbar{display:none}
+.live-transcript-box:empty::after{
+  content:'正在听你说…';color:var(--text2);opacity:0.6;font-size:13px
+}
+.live-transcript-box .cursor{
+  display:inline-block;width:2px;height:16px;
+  background:var(--gold);vertical-align:middle;
+  margin-left:2px;animation:blink 0.8s step-end infinite
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.btn-record{
+  width:88px;height:88px;border-radius:50%;border:6px solid var(--bg2);
+  background:linear-gradient(135deg,#FF5E5E,#E63946);
+  color:#FFF;font-size:36px;cursor:pointer;transition:var(--transition);
+  box-shadow:0 6px 0 #C62828,0 8px 24px rgba(230,57,70,0.35);
+  display:inline-flex;align-items:center;justify-content:center;
+  position:relative;z-index:1
+}
+.btn-record:active{transform:translateY(2px);box-shadow:0 3px 0 #C62828,0 4px 12px rgba(230,57,70,0.25)}
+.btn-record.recording{
+  background:linear-gradient(135deg,#FF6B6B,#E63946);
+  border-color:#FFCDD2;box-shadow:0 0 0 12px rgba(230,57,70,0.15),0 6px 0 #C62828
+}
+.btn-record.recording::after{
+  content:'';position:absolute;inset:-18px;border-radius:50%;
+  border:3px solid rgba(230,57,70,0.2);animation:rec-ring 2s ease-out infinite
+}
+@keyframes rec-ring{0%{inset:-18px;opacity:1}100%{inset:-42px;opacity:0}}
+/* Section title */
+.section-title{
+  display:flex;align-items:center;gap:8px;
+  font-size:18px;font-weight:800;color:var(--purple);
+  margin-bottom:14px
+}
+.section-count{
+  background:var(--purple);color:#FFF;font-size:12px;
+  padding:2px 10px;border-radius:20px;font-weight:700
+}
+/* Recording List */
+.recording-list{display:flex;flex-direction:column;gap:10px}
+.rec-card{
+  background:var(--card);border-radius:var(--radius-sm);
+  padding:16px 16px 16px 18px;position:relative;
+  box-shadow:0 2px 0 rgba(61,44,94,0.06),0 4px 16px rgba(61,44,94,0.04);
+  display:flex;align-items:center;gap:12px;
+  transition:transform var(--transition);overflow:hidden;
+  touch-action:pan-y
+}
+.rec-card.swiped{transform:translateX(-80px)}
+.rec-card .delete-zone{
+  position:absolute;right:0;top:0;bottom:0;width:80px;
+  background:var(--red);display:flex;align-items:center;justify-content:center;
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  font-size:22px;color:#FFF;cursor:pointer
+}
+.rec-play-btn{
+  width:48px;height:48px;border-radius:50%;border:none;
+  background:var(--gold);color:#FFF;font-size:20px;
+  cursor:pointer;flex-shrink:0;transition:var(--transition);
+  box-shadow:0 3px 0 var(--gold2);display:flex;
+  align-items:center;justify-content:center
+}
+.rec-play-btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--gold2)}
+.rec-play-btn.playing{background:var(--purple);box-shadow:0 3px 0 var(--purple2)}
+.rec-info{flex:1;min-width:0;cursor:pointer}
+.rec-name{
+  font-size:16px;font-weight:700;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  display:flex;align-items:center;gap:6px
+}
+.rec-name .star{color:var(--gold);font-size:14px;flex-shrink:0}
+.rec-meta{font-size:12px;color:var(--text2);margin-top:3px;font-weight:500}
+.rec-transcript{
+  font-size:13px;color:var(--text2);margin-top:6px;
+  padding:8px 10px;background:var(--bg);border-radius:10px;
+  line-height:1.5;display:none;word-break:break-all
+}
+.rec-transcript.show{display:block}
+.rec-actions{display:flex;gap:2px;flex-shrink:0}
+.rec-act-btn{
+  width:36px;height:36px;border-radius:50%;border:none;
+  background:transparent;font-size:16px;cursor:pointer;
+  color:var(--text2);transition:var(--transition);
+  display:flex;align-items:center;justify-content:center
+}
+.rec-act-btn:active{background:var(--bg2)}
+.rec-act-btn.active{color:var(--gold)}
+.copy-btn{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:11px;padding:4px 10px;border-radius:12px;border:none;
+  background:var(--purple);color:#FFF;cursor:pointer;
+  font-family:var(--font);font-weight:600;margin-top:6px
+}
+.copy-btn:active{opacity:0.8}
+/* Empty state */
+.empty-state{
+  text-align:center;padding:48px 20px;color:var(--text2)
+}
+.empty-icon{font-size:64px;margin-bottom:16px;opacity:0.5}
+.empty-title{font-size:18px;font-weight:700;color:var(--purple);margin-bottom:8px}
+.empty-sub{font-size:14px;line-height:1.6}
+/* Toast */
+.toast{
+  position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
+  background:var(--purple);color:#FFF;padding:12px 28px;
+  border-radius:30px;font-size:15px;font-weight:700;
+  box-shadow:0 8px 32px rgba(61,44,94,0.3);
+  opacity:0;pointer-events:none;transition:opacity 0.3s;z-index:9999
+}
+.toast.show{opacity:1}
+/* Rename modal */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.4);
+  display:flex;align-items:flex-end;justify-content:center;
+  z-index:200;opacity:0;pointer-events:none;transition:opacity 0.3s
+}
+.modal-overlay.show{opacity:1;pointer-events:auto}
+.modal{
+  background:var(--card);border-radius:24px 24px 0 0;
+  padding:24px 24px 36px;width:100%;max-width:520px;
+  box-shadow:0 -8px 40px rgba(0,0,0,0.15)
+}
+.modal-title{font-size:18px;font-weight:800;margin-bottom:16px;color:var(--purple)}
+.modal input{
+  width:100%;padding:14px 16px;border-radius:var(--radius-sm);
+  border:2px solid var(--bg2);font-size:16px;font-family:var(--font);
+  outline:none;transition:var(--transition);color:var(--text);
+  background:var(--bg)
+}
+.modal input:focus{border-color:var(--gold)}
+.modal-btns{display:flex;gap:10px;margin-top:16px}
+.btn{flex:1;padding:14px;border-radius:var(--radius-sm);border:none;
+  font-size:16px;font-weight:700;cursor:pointer;font-family:var(--font);
+  transition:var(--transition);text-align:center
+}
+.btn-primary{background:var(--gold);color:#FFF;box-shadow:0 3px 0 var(--gold2)}
+.btn-secondary{background:var(--bg2);color:var(--text2)}
+.btn:active{transform:translateY(2px)}
+::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="header-icon">🕳️</span>
+  <div>
+    <h1>Johnny的树洞</h1>
+    <div class="header-sub">说的话，都放心藏在这里</div>
+  </div>
+</div>
+
+<div class="info-bar" id="infoBar">
+  <span class="dot on" id="infoDot"></span>
+  <span id="infoText">加载中…</span>
+</div>
+
+<div class="main">
+  <!-- Recording Zone -->
+  <div class="record-zone">
+    <div class="record-timer" id="timer">00:00</div>
+    <div class="record-status" id="status">轻点下方按钮开始录音</div>
+    <div class="live-transcript-box" id="liveTranscript"></div>
+    <button class="btn-record" id="btnRecord" aria-label="录音">🎙️</button>
+  </div>
+
+  <!-- Recording List -->
+  <div class="section-title">
+    📋 树洞记录 <span class="section-count" id="count">0</span>
+  </div>
+  <div class="recording-list" id="list"></div>
+  <div class="empty-state" id="empty">
+    <div class="empty-icon">🕳️</div>
+    <div class="empty-title">还没有记录</div>
+    <div class="empty-sub">录下你的想法，它们会很安全<br>录音时会自动转成文字 ✨</div>
+  </div>
+</div>
+
+<!-- Rename Modal -->
+<div class="modal-overlay" id="renameModal">
+  <div class="modal">
+    <div class="modal-title">✏️ 重命名</div>
+    <input type="text" id="renameInput" placeholder="输入新名字…" maxlength="50">
+    <div class="modal-btns">
+      <button class="btn btn-secondary" id="renameCancel">取消</button>
+      <button class="btn btn-primary" id="renameConfirm">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ==================== Config ====================
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const hasNativeSpeech = !!SpeechRecognition;
+
+// ==================== IndexedDB ====================
+const DB_NAME='TreeholeDB';const DB_VER=1;const STORE='recordings';
+let db=null;
+
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(DB_NAME,DB_VER);
+    req.onupgradeneeded=e=>{e.target.result.createObjectStore(STORE,{keyPath:'id'})};
+    req.onsuccess=e=>{db=e.target.result;resolve(db)};
+    req.onerror=()=>reject(req.error);
+  });
+}
+function dbPut(rec){return new Promise(r=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).put(rec);t.oncomplete=()=>r()})}
+function dbGetAll(){return new Promise(r=>{const t=db.transaction(STORE,'readonly');const req=t.objectStore(STORE).getAll();req.onsuccess=()=>r(req.result)})}
+function dbDelete(id){return new Promise(r=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).delete(id);t.oncomplete=()=>r()})}
+function dbUpdate(id,updates){return new Promise(r=>{const t=db.transaction(STORE,'readwrite');const store=t.objectStore(STORE);const g=store.get(id);g.onsuccess=()=>{const rec=g.result;Object.assign(rec,updates);store.put(rec);t.oncomplete=()=>r()}})}
+
+// ==================== Live Speech Recognition (v4 — iOS Safari compatible) ====================
+let recognition = null;
+let isRecognitionActive = false;
+let liveTranscriptText = '';
+let recognitionRestartTimer = null;
+let transcriptUpdateTimer = null;
+
+function createRecognitionInstance() {
+  if (!hasNativeSpeech) return null;
+  const rec = new SpeechRecognition();
+  rec.lang = 'zh-CN';
+  rec.continuous = false;         // iOS Safari: continuous=true causes silent failure
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+
+  rec.onresult = (e) => {
+    let interim = '';
+    let final = '';
+    for (let i = 0; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) {
+        final += r[0].transcript;
+      } else {
+        interim += r[0].transcript;
+      }
+    }
+    // Append final results to our running text
+    if (final) {
+      liveTranscriptText += final;
+    }
+    // Update live display
+    updateLiveTranscript(liveTranscriptText + interim);
+  };
+
+  rec.onerror = (e) => {
+    // no-speech / aborted are normal during restart cycles
+    if (e.error === 'no-speech' || e.error === 'aborted') {
+      console.log('Speech recognition:', e.error);
+    } else {
+      console.warn('Speech recognition error:', e.error);
+    }
+    isRecognitionActive = false;
+  };
+
+  rec.onend = () => {
+    isRecognitionActive = false;
+    const mediaRec = mediaRecorder;
+    // Auto-restart if we're still recording (with debounce)
+    if (mediaRec && mediaRec.state === 'recording') {
+      clearTimeout(recognitionRestartTimer);
+      recognitionRestartTimer = setTimeout(() => {
+        if (mediaRec && mediaRec.state === 'recording') {
+          startRecognition();
+        }
+      }, 200); // 200ms debounce — prevents iOS rate-limiting
+    }
+  };
+
+  return rec;
+}
+
+function startRecognition() {
+  if (!hasNativeSpeech || isRecognitionActive) return;
+  try {
+    recognition = createRecognitionInstance();
+    if (!recognition) return;
+    isRecognitionActive = true;
+    recognition.start();
+  } catch (e) {
+    console.warn('Failed to start recognition:', e);
+    isRecognitionActive = false;
+  }
+}
+
+function stopRecognition() {
+  clearTimeout(recognitionRestartTimer);
+  clearTimeout(transcriptUpdateTimer);
+  if (recognition && isRecognitionActive) {
+    try { recognition.abort(); } catch(e) {}
+  }
+  recognition = null;
+  isRecognitionActive = false;
+}
+
+function updateLiveTranscript(text) {
+  clearTimeout(transcriptUpdateTimer);
+  transcriptUpdateTimer = setTimeout(() => {
+    const el = document.getElementById('liveTranscript');
+    if (el) {
+      el.innerHTML = escHtml(text) + '<span class="cursor"></span>';
+      // Auto scroll to bottom
+      el.scrollTop = el.scrollHeight;
+    }
+  }, 50);
+}
+
+function clearLiveTranscript() {
+  liveTranscriptText = '';
+  const el = document.getElementById('liveTranscript');
+  if (el) el.innerHTML = '';
+}
+
+// ==================== Recording ====================
+let mediaRecorder=null;let audioChunks=[];let recordStart=0;
+let timerInterval=null;let currentStream=null;
+
+const $timer=document.getElementById('timer');
+const $status=document.getElementById('status');
+const $btnRecord=document.getElementById('btnRecord');
+const $count=document.getElementById('count');
+
+function formatTime(ms){
+  const s=Math.floor(ms/1000);const m=Math.floor(s/60);const sec=s%60;
+  return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
+function updateTimer(){$timer.textContent=formatTime(Date.now()-recordStart)}
+
+async function startRecording(){
+  try{
+    // IMPORTANT: Start SpeechRecognition BEFORE getUserMedia
+    // iOS Safari requires recognition to start in the same user-gesture context
+    clearLiveTranscript();
+    if (hasNativeSpeech) {
+      startRecognition();
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+    currentStream = stream;
+    const mimeType = MediaRecorder.isTypeSupported('audio/mp4')
+      ? 'audio/mp4'
+      : 'audio/webm;codecs=opus';
+    mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 64000 });
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => { if(e.data.size > 0) audioChunks.push(e.data) };
+    mediaRecorder.onstop = () => saveRecording();
+    mediaRecorder.start(1000);
+
+    recordStart = Date.now();
+    $timer.textContent = '00:00';
+    timerInterval = setInterval(updateTimer, 200);
+    $timer.classList.add('recording');
+    $status.classList.add('recording');
+
+    if (hasNativeSpeech) {
+      $status.textContent = '🔴 录制中 · 边说边转…';
+    } else {
+      $status.textContent = '🔴 正在录制中…';
+    }
+    $btnRecord.classList.add('recording');
+    $btnRecord.innerHTML = '⏹️';
+  } catch(err) {
+    stopRecognition();
+    showToast('无法访问麦克风，请检查权限');
+  }
+}
+
+function stopRecording(){
+  if(!mediaRecorder || mediaRecorder.state==='inactive') return;
+  clearInterval(timerInterval);
+  mediaRecorder.stop();
+  if(currentStream){currentStream.getTracks().forEach(t=>t.stop());currentStream=null}
+
+  // Stop speech recognition
+  stopRecognition();
+
+  $timer.classList.remove('recording');
+  $status.classList.remove('recording');
+  $status.textContent = '轻点下方按钮开始录音';
+  $btnRecord.classList.remove('recording');
+  $btnRecord.innerHTML = '🎙️';
+  mediaRecorder = null;
+}
+
+async function saveRecording(){
+  const duration = Date.now() - recordStart;
+  const blob = new Blob(audioChunks, { type: audioChunks[0]?.type || 'audio/mp4' });
+  const now = new Date();
+  const name = `录音 ${now.toLocaleDateString('zh-CN')} ${now.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}`;
+  const rec = {
+    id: now.getTime().toString(),
+    blob, duration, name,
+    date: now.toISOString(),
+    starred: false,
+    transcript: liveTranscriptText.trim() // Save live transcript
+  };
+  await dbPut(rec);
+  clearLiveTranscript();
+  await renderList();
+  showToast('✅ 已保存' + (rec.transcript ? ' · 文字已同步' : ''));
+}
+
+// ==================== Playback ====================
+let currentAudio=null;let playingId=null;
+
+function togglePlay(rec){
+  if(currentAudio&&playingId===rec.id){currentAudio.pause();currentAudio=null;playingId=null;renderList();return}
+  if(currentAudio){currentAudio.pause()}
+  const url=URL.createObjectURL(rec.blob);
+  const audio=new Audio(url);
+  audio.onended=()=>{playingId=null;renderList()};
+  audio.onerror=()=>{showToast('播放失败');playingId=null;renderList()};
+  audio.play().catch(()=>{showToast('播放失败')});
+  currentAudio=audio;playingId=rec.id;
+  renderList();
+}
+
+// ==================== Copy Transcript ====================
+async function copyTranscript(rec){
+  try{
+    await navigator.clipboard.writeText(rec.transcript);
+    showToast('📋 文字已复制到剪贴板');
+  }catch(e){
+    const ta=document.createElement('textarea');
+    ta.value=rec.transcript;ta.style.position='fixed';ta.style.left='-9999px';
+    document.body.appendChild(ta);ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);
+    showToast('📋 文字已复制到剪贴板');
+  }
+}
+
+// ==================== Share ====================
+async function shareRecording(rec){
+  const file=new File([rec.blob],rec.name+'.m4a',{type:'audio/mp4'});
+  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({title:rec.name,files:[file]})}catch(e){}
+  }else{
+    const url=URL.createObjectURL(rec.blob);
+    const a=document.createElement('a');a.href=url;a.download=rec.name+'.m4a';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    URL.revokeObjectURL(url);showToast('📥 已开始下载');
+  }
+}
+
+// ==================== Actions ====================
+async function deleteRecording(id){
+  if(currentAudio&&playingId===id){currentAudio.pause();currentAudio=null;playingId=null}
+  await dbDelete(id);
+  await renderList();
+  showToast('🗑️ 已删除');
+}
+async function toggleStar(id,starred){
+  await dbUpdate(id,{starred:!starred});
+  await renderList();
+}
+async function renameRecording(id){
+  const rec=allRecordings.find(r=>r.id===id);
+  if(!rec)return;
+  const modal=document.getElementById('renameModal');
+  const input=document.getElementById('renameInput');
+  input.value=rec.name;modal.classList.add('show');input.focus();
+  window._renameId=id;
+}
+
+// ==================== Swipe to delete ====================
+let touchStartX=0;let touchCurrentX=0;let swipedCard=null;
+
+function setupSwipe(card,id){
+  card.addEventListener('touchstart',e=>{
+    if(swipedCard&&swipedCard!==card){swipedCard.classList.remove('swiped');swipedCard=null}
+    touchStartX=e.touches[0].clientX;
+  },{passive:true});
+  card.addEventListener('touchmove',e=>{
+    touchCurrentX=e.touches[0].clientX;
+    const dx=touchStartX-touchCurrentX;
+    if(dx>20){card.classList.add('swiped');swipedCard=card}
+    else if(dx<-10){card.classList.remove('swiped');swipedCard=null}
+  },{passive:true});
+}
+
+// ==================== Render ====================
+let allRecordings=[];
+
+async function renderList(){
+  allRecordings=await dbGetAll();
+  allRecordings.sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+  const $list=document.getElementById('list');
+  const $empty=document.getElementById('empty');
+  $count.textContent=allRecordings.length;
+
+  if(allRecordings.length===0){$list.innerHTML='';$empty.style.display='block';return}
+  $empty.style.display='none';
+
+  $list.innerHTML=allRecordings.map(r=>{
+    const hasText=r.transcript&&r.transcript.trim();
+    return `
+    <div class="rec-card" data-id="${r.id}">
+      <button class="rec-play-btn${playingId===r.id?' playing':''}" data-play="${r.id}" aria-label="播放">
+        ${playingId===r.id?'⏸️':'▶️'}
+      </button>
+      <div class="rec-info" data-rename="${r.id}">
+        <div class="rec-name">${r.starred?'<span class="star">⭐</span>':''}${escHtml(r.name)}</div>
+        <div class="rec-meta">${formatTime(r.duration)} · ${fmtDate(r.date)}${hasText?' · 📝 有文字稿':''}</div>
+        ${hasText?`
+        <div class="rec-transcript show" data-transcript="${r.id}">
+          ${escHtml(r.transcript)}
+          <br><button class="copy-btn" data-copy="${r.id}">📋 复制文字</button>
+        </div>`:''}
+      </div>
+      <div class="rec-actions">
+        <button class="rec-act-btn${r.starred?' active':''}" data-star="${r.id}" title="标星">⭐</button>
+        <button class="rec-act-btn" data-share="${r.id}" title="分享">📤</button>
+      </div>
+      <div class="delete-zone" data-delete="${r.id}">🗑️</div>
+    </div>`;
+  }).join('');
+
+  // Attach events
+  $list.querySelectorAll('[data-play]').forEach(b=>{
+    b.addEventListener('click',e=>{e.stopPropagation();const r=allRecordings.find(x=>x.id===b.dataset.play);if(r)togglePlay(r)})
+  });
+  $list.querySelectorAll('[data-rename]').forEach(el=>{
+    el.addEventListener('click',()=>renameRecording(el.dataset.rename))
+  });
+  $list.querySelectorAll('[data-star]').forEach(b=>{
+    b.addEventListener('click',e=>{e.stopPropagation();const r=allRecordings.find(x=>x.id===b.dataset.star);if(r)toggleStar(b.dataset.star,r.starred)})
+  });
+  $list.querySelectorAll('[data-share]').forEach(b=>{
+    b.addEventListener('click',e=>{e.stopPropagation();const r=allRecordings.find(x=>x.id===b.dataset.share);if(r)shareRecording(r)})
+  });
+  $list.querySelectorAll('[data-copy]').forEach(b=>{
+    b.addEventListener('click',e=>{e.stopPropagation();const r=allRecordings.find(x=>x.id===b.dataset.copy);if(r)copyTranscript(r)})
+  });
+  $list.querySelectorAll('[data-delete]').forEach(b=>{
+    b.addEventListener('click',e=>{e.stopPropagation();deleteRecording(b.dataset.delete)})
+  });
+  $list.querySelectorAll('.rec-card').forEach(card=>setupSwipe(card,card.dataset.id));
+
+  // Toggle transcript
+  $list.querySelectorAll('[data-transcript]').forEach(el=>{
+    const parent=el.parentElement;
+    parent.addEventListener('click',e=>{
+      if(e.target.closest('[data-play]')||e.target.closest('[data-star]')||
+         e.target.closest('[data-share]')||e.target.closest('[data-copy]')||
+         e.target.closest('[data-delete]'))return;
+      el.classList.toggle('show')
+    })
+  });
+}
+
+// ==================== Helpers ====================
+function escHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function fmtDate(s){const d=new Date(s);const now=new Date();const diff=now-d;
+  if(diff<86400000&&d.getDate()===now.getDate())return '今天 '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+  if(diff<172800000&&d.getDate()===now.getDate()-1)return '昨天 '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})+' '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+}
+function showToast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+// ==================== Info Bar ====================
+function updateInfoBar(){
+  const dot=document.getElementById('infoDot');
+  const txt=document.getElementById('infoText');
+  if(hasNativeSpeech){
+    dot.classList.add('on');dot.classList.remove('off');
+    txt.textContent='✅ 语音转文字可用（边录边转）';
+  }else{
+    dot.classList.remove('on');dot.classList.add('off');
+    txt.textContent='⚠️ 此浏览器不支持语音转文字，仅能录音';
+  }
+}
+
+// ==================== Init ====================
+document.getElementById('btnRecord').addEventListener('click',()=>{
+  if(mediaRecorder&&mediaRecorder.state==='recording'){stopRecording()}
+  else{startRecording()}
+});
+
+// Rename modal
+document.getElementById('renameCancel').addEventListener('click',()=>{
+  document.getElementById('renameModal').classList.remove('show')
+});
+document.getElementById('renameConfirm').addEventListener('click',async()=>{
+  const name=document.getElementById('renameInput').value.trim();
+  if(name&&window._renameId){await dbUpdate(window._renameId,{name});await renderList()}
+  document.getElementById('renameModal').classList.remove('show');
+  if(name)showToast('✏️ 已重命名');
+});
+document.getElementById('renameInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter')document.getElementById('renameConfirm').click()
+});
+
+// Network status
+window.addEventListener('online',()=>{updateInfoBar();showToast('📡 已联网')});
+window.addEventListener('offline',()=>{updateInfoBar();showToast('📡 已离线，录音不受影响')});
+
+// Tab close safety
+window.addEventListener('beforeunload',e=>{
+  if(mediaRecorder&&mediaRecorder.state==='recording')stopRecording()
+});
+
+// Init
+updateInfoBar();
+openDB().then(()=>renderList());
+
+// Service Worker
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
