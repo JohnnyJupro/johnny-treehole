@@ -47,6 +47,7 @@ body{
 .info-bar .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .info-bar .dot.on{background:var(--green)}
 .info-bar .dot.off{background:#CCC}
+.info-bar .dot.warn{background:#FF9800}
 /* Main */
 .main{padding:12px 20px 40px;max-width:520px;margin:0 auto}
 /* Recording Area */
@@ -83,9 +84,7 @@ body{
   -webkit-overflow-scrolling:touch
 }
 .live-transcript-box::-webkit-scrollbar{display:none}
-.live-transcript-box:empty::after{
-  content:'正在听你说…';color:var(--text2);opacity:0.6;font-size:13px
-}
+.live-transcript-box .placeholder{color:var(--text2);opacity:0.6;font-size:13px}
 .live-transcript-box .cursor{
   display:inline-block;width:2px;height:16px;
   background:var(--gold);vertical-align:middle;
@@ -189,7 +188,8 @@ body{
   background:var(--purple);color:#FFF;padding:12px 28px;
   border-radius:30px;font-size:15px;font-weight:700;
   box-shadow:0 8px 32px rgba(61,44,94,0.3);
-  opacity:0;pointer-events:none;transition:opacity 0.3s;z-index:9999
+  opacity:0;pointer-events:none;transition:opacity 0.3s;z-index:9999;
+  max-width:90vw;text-align:center
 }
 .toast.show{opacity:1}
 /* Rename modal */
@@ -243,7 +243,7 @@ body{
   <div class="record-zone">
     <div class="record-timer" id="timer">00:00</div>
     <div class="record-status" id="status">轻点下方按钮开始录音</div>
-    <div class="live-transcript-box" id="liveTranscript"></div>
+    <div class="live-transcript-box" id="liveTranscript"><span class="placeholder">录音时这里会实时显示你说的文字</span></div>
     <button class="btn-record" id="btnRecord" aria-label="录音">🎙️</button>
   </div>
 
@@ -275,9 +275,16 @@ body{
 <div class="toast" id="toast"></div>
 
 <script>
-// ==================== Config ====================
+// ==================== Config & Detect ====================
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const hasNativeSpeech = !!SpeechRecognition;
+
+// Detect browser
+const ua = navigator.userAgent;
+const isSafari = /Safari/i.test(ua) && !/Chrome/i.test(ua) && !/CriOS/i.test(ua);
+const isIOS = /iPhone|iPad|iPod/i.test(ua);
+const isIOSApp = isIOS && navigator.standalone === true; // PWA added to home screen
+const isPWA = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
 // ==================== IndexedDB ====================
 const DB_NAME='TreeholeDB';const DB_VER=1;const STORE='recordings';
@@ -296,22 +303,26 @@ function dbGetAll(){return new Promise(r=>{const t=db.transaction(STORE,'readonl
 function dbDelete(id){return new Promise(r=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).delete(id);t.oncomplete=()=>r()})}
 function dbUpdate(id,updates){return new Promise(r=>{const t=db.transaction(STORE,'readwrite');const store=t.objectStore(STORE);const g=store.get(id);g.onsuccess=()=>{const rec=g.result;Object.assign(rec,updates);store.put(rec);t.oncomplete=()=>r()}})}
 
-// ==================== Live Speech Recognition (v4 — iOS Safari compatible) ====================
+// ==================== Live Speech Recognition (v5 — improved iOS Safari compat) ====================
 let recognition = null;
 let isRecognitionActive = false;
+let recognitionStartedOK = false;  // track if recognition actually started
 let liveTranscriptText = '';
 let recognitionRestartTimer = null;
 let transcriptUpdateTimer = null;
+let recognitionResultCount = 0;     // track number of results received
+let recognitionTimeoutTimer = null;
 
 function createRecognitionInstance() {
   if (!hasNativeSpeech) return null;
   const rec = new SpeechRecognition();
   rec.lang = 'zh-CN';
-  rec.continuous = false;         // iOS Safari: continuous=true causes silent failure
+  rec.continuous = false;
   rec.interimResults = true;
   rec.maxAlternatives = 1;
 
   rec.onresult = (e) => {
+    recognitionResultCount++;
     let interim = '';
     let final = '';
     for (let i = 0; i < e.results.length; i++) {
@@ -322,36 +333,44 @@ function createRecognitionInstance() {
         interim += r[0].transcript;
       }
     }
-    // Append final results to our running text
     if (final) {
       liveTranscriptText += final;
     }
-    // Update live display
     updateLiveTranscript(liveTranscriptText + interim);
+    // Update status to show it's working
+    if (recognitionResultCount === 1) {
+      updateRecStatus('🔴 录制中 · 文字识别中 ✨');
+    }
   };
 
   rec.onerror = (e) => {
-    // no-speech / aborted are normal during restart cycles
     if (e.error === 'no-speech' || e.error === 'aborted') {
       console.log('Speech recognition:', e.error);
+    } else if (e.error === 'not-allowed') {
+      console.warn('Speech recognition: microphone not allowed');
+      recognitionStartedOK = false;
     } else {
       console.warn('Speech recognition error:', e.error);
     }
     isRecognitionActive = false;
+    recognitionStartedOK = false;
   };
 
   rec.onend = () => {
     isRecognitionActive = false;
-    const mediaRec = mediaRecorder;
-    // Auto-restart if we're still recording (with debounce)
-    if (mediaRec && mediaRec.state === 'recording') {
+    const mr = mediaRecorder;
+    if (mr && mr.state === 'recording') {
       clearTimeout(recognitionRestartTimer);
       recognitionRestartTimer = setTimeout(() => {
-        if (mediaRec && mediaRec.state === 'recording') {
+        if (mr && mr.state === 'recording') {
           startRecognition();
         }
-      }, 200); // 200ms debounce — prevents iOS rate-limiting
+      }, 300);
     }
+  };
+
+  rec.onstart = () => {
+    recognitionStartedOK = true;
   };
 
   return rec;
@@ -363,16 +382,19 @@ function startRecognition() {
     recognition = createRecognitionInstance();
     if (!recognition) return;
     isRecognitionActive = true;
+    recognitionStartedOK = false;
     recognition.start();
   } catch (e) {
     console.warn('Failed to start recognition:', e);
     isRecognitionActive = false;
+    recognitionStartedOK = false;
   }
 }
 
 function stopRecognition() {
   clearTimeout(recognitionRestartTimer);
   clearTimeout(transcriptUpdateTimer);
+  clearTimeout(recognitionTimeoutTimer);
   if (recognition && isRecognitionActive) {
     try { recognition.abort(); } catch(e) {}
   }
@@ -385,8 +407,11 @@ function updateLiveTranscript(text) {
   transcriptUpdateTimer = setTimeout(() => {
     const el = document.getElementById('liveTranscript');
     if (el) {
-      el.innerHTML = escHtml(text) + '<span class="cursor"></span>';
-      // Auto scroll to bottom
+      if (text) {
+        el.innerHTML = escHtml(text) + '<span class="cursor"></span>';
+      } else {
+        el.innerHTML = '<span class="placeholder">正在听你说…</span>';
+      }
       el.scrollTop = el.scrollHeight;
     }
   }, 50);
@@ -394,8 +419,33 @@ function updateLiveTranscript(text) {
 
 function clearLiveTranscript() {
   liveTranscriptText = '';
+  recognitionResultCount = 0;
+  recognitionStartedOK = false;
+  clearTimeout(recognitionTimeoutTimer);
   const el = document.getElementById('liveTranscript');
-  if (el) el.innerHTML = '';
+  if (el) el.innerHTML = '<span class="placeholder">正在听你说…</span>';
+}
+
+// Watchdog: if 8 seconds pass with no results, show a warning
+function startRecognitionWatchdog() {
+  clearTimeout(recognitionTimeoutTimer);
+  recognitionTimeoutTimer = setTimeout(() => {
+    if (recognitionResultCount === 0 && mediaRecorder && mediaRecorder.state === 'recording') {
+      // Check if recognition is actually running
+      if (!recognitionStartedOK || !isRecognitionActive) {
+        updateRecStatus('🔴 录制中 · ⚠️ 语音识别未启动，请用 Safari 打开');
+        const el = document.getElementById('liveTranscript');
+        if (el) el.innerHTML = '<span class="placeholder">⚠️ 语音识别未生效，请确认使用 Safari 浏览器</span>';
+      } else {
+        updateRecStatus('🔴 录制中 · 等待说话中…');
+      }
+    }
+  }, 8000);
+}
+
+function updateRecStatus(text) {
+  const el = document.getElementById('status');
+  if (el) el.textContent = text;
 }
 
 // ==================== Recording ====================
@@ -415,17 +465,19 @@ function updateTimer(){$timer.textContent=formatTime(Date.now()-recordStart)}
 
 async function startRecording(){
   try{
-    // IMPORTANT: Start SpeechRecognition BEFORE getUserMedia
-    // iOS Safari requires recognition to start in the same user-gesture context
     clearLiveTranscript();
+
+    // Step 1: Start SpeechRecognition FIRST (must be in user-gesture context)
     if (hasNativeSpeech) {
       startRecognition();
     }
 
+    // Step 2: Get microphone access
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true }
     });
     currentStream = stream;
+
     const mimeType = MediaRecorder.isTypeSupported('audio/mp4')
       ? 'audio/mp4'
       : 'audio/webm;codecs=opus';
@@ -440,14 +492,16 @@ async function startRecording(){
     timerInterval = setInterval(updateTimer, 200);
     $timer.classList.add('recording');
     $status.classList.add('recording');
-
-    if (hasNativeSpeech) {
-      $status.textContent = '🔴 录制中 · 边说边转…';
-    } else {
-      $status.textContent = '🔴 正在录制中…';
-    }
     $btnRecord.classList.add('recording');
     $btnRecord.innerHTML = '⏹️';
+
+    // Show status based on speech recognition capability
+    if (hasNativeSpeech) {
+      updateRecStatus('🔴 录制中 · 边说边转…');
+      startRecognitionWatchdog();
+    } else {
+      updateRecStatus('🔴 正在录制中…');
+    }
   } catch(err) {
     stopRecognition();
     showToast('无法访问麦克风，请检查权限');
@@ -460,7 +514,6 @@ function stopRecording(){
   mediaRecorder.stop();
   if(currentStream){currentStream.getTracks().forEach(t=>t.stop());currentStream=null}
 
-  // Stop speech recognition
   stopRecognition();
 
   $timer.classList.remove('recording');
@@ -481,12 +534,16 @@ async function saveRecording(){
     blob, duration, name,
     date: now.toISOString(),
     starred: false,
-    transcript: liveTranscriptText.trim() // Save live transcript
+    transcript: liveTranscriptText.trim()
   };
   await dbPut(rec);
   clearLiveTranscript();
   await renderList();
-  showToast('✅ 已保存' + (rec.transcript ? ' · 文字已同步' : ''));
+  if (rec.transcript) {
+    showToast('✅ 已保存 · 文字已同步');
+  } else {
+    showToast('✅ 已保存 · ' + (hasNativeSpeech ? '文字未识别（请用 Safari）' : '此浏览器不支持语音转文字'));
+  }
 }
 
 // ==================== Playback ====================
@@ -647,19 +704,33 @@ function fmtDate(s){const d=new Date(s);const now=new Date();const diff=now-d;
 }
 function showToast(msg){
   const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),2200);
+  setTimeout(()=>t.classList.remove('show'),3000);
 }
 
 // ==================== Info Bar ====================
 function updateInfoBar(){
   const dot=document.getElementById('infoDot');
   const txt=document.getElementById('infoText');
-  if(hasNativeSpeech){
-    dot.classList.add('on');dot.classList.remove('off');
-    txt.textContent='✅ 语音转文字可用（边录边转）';
-  }else{
-    dot.classList.remove('on');dot.classList.add('off');
+
+  if (!hasNativeSpeech) {
+    dot.className='dot off';
     txt.textContent='⚠️ 此浏览器不支持语音转文字，仅能录音';
+    return;
+  }
+
+  // Has SpeechRecognition API
+  if (isSafari || isIOS) {
+    dot.className='dot on';
+    if (isIOSApp || isPWA) {
+      txt.textContent='✅ Safari PWA · 语音转文字可用（需联网）';
+    } else if (isIOS) {
+      txt.textContent='✅ Safari iOS · 语音转文字可用（需联网）';
+    } else {
+      txt.textContent='✅ Safari · 语音转文字可用';
+    }
+  } else {
+    dot.className='dot warn';
+    txt.textContent='⚠️ 请用 Safari 打开以获得最佳语音转文字体验';
   }
 }
 
@@ -685,7 +756,7 @@ document.getElementById('renameInput').addEventListener('keydown',e=>{
 
 // Network status
 window.addEventListener('online',()=>{updateInfoBar();showToast('📡 已联网')});
-window.addEventListener('offline',()=>{updateInfoBar();showToast('📡 已离线，录音不受影响')});
+window.addEventListener('offline',()=>{updateInfoBar();showToast('📡 已离线，语音转文字需要网络')});
 
 // Tab close safety
 window.addEventListener('beforeunload',e=>{
